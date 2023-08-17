@@ -1,0 +1,37 @@
+version: '3.9'
+
+services:
+  app:
+    image: app:django
+    build: .
+    ports:
+      - 8000:8000
+    volumes:
+      - .:/django
+    container_name: django
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      db:
+        condition: service_started
+    networks:
+      - djangonetwork
+
+  db:
+    image: postgres
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    restart: always
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5432:5432
+    container_name: postgres_db
+    networks:
+      - djangonetwork
+
+
+networks:
+  djangonetwork:
+    driver: bridge
