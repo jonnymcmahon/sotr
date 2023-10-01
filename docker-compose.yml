@@ -16,6 +16,23 @@ services:
     networks:
       - djangonetwork
 
+  # stomp:
+  #   image: app:stomp
+  #   build: .
+  #   ports:
+  #     - 8001:8001
+  #   volumes:
+  #     - .:/django
+  #   container_name: stomp
+  #   command: python stomp/opendata-nationalrail-client.py &
+  #   restart: always
+  #   depends_on:
+  #     db:
+  #       condition: service_started
+  #   networks:
+  #     - djangonetwork
+
+
   db:
     image: postgres
     volumes:

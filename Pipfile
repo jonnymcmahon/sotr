@@ -13,6 +13,8 @@ psycopg2-binary = ">=2.8"
 boto3 = ">=1.28.24"
 django-storages = "*"
 python-dotenv = "*"
+xmlschema = "*"
+django-stomp = "*"
 
 [dev-packages]
 
