@@ -10,6 +10,9 @@ import xml.etree.ElementTree as ET
 import json
 from .models import Station, Journey, TOC, Route, Stop
 import time
+import hashlib
+import sys
+import base64
 
 # Create your views here.
 
@@ -169,9 +172,11 @@ def find_routes(request):
         #check if train is for today's timetable
         # if not journey.attrib['ssd'] == datetime.date.today().strftime('%Y-%m-%d'): continue
         if not journey.attrib['ssd'] == '2023-09-25': continue
+
+        # if not journey.attrib['rid'] == '202309257623262': continue
+
         #new variable station_stops as journey includes tiplocs that arent stations (junctions etc)
         station_stops = 2
-
         for stop in journey:
             if 'IP' in stop.tag:
                 station_stops += 1
@@ -182,80 +187,34 @@ def find_routes(request):
         if 'cancelReason' in journey[length].tag:
             length -= 1
 
-        toc_record = TOC.objects.filter(toc = journey.attrib['toc'])[0]
+        toc_id = TOC.objects.filter(toc = journey.attrib['toc'])[0].id
 
         orig_tiploc = journey[0].attrib['tpl']
         dest_tiploc = journey[length].attrib['tpl']
         
         #if matches another route do a check to see if they are the same
-        if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_record.id, num_stops = station_stops):
+        if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops):
+            
+            #get new checksum
+            new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
 
-            route_match = False
-
-            routes = Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_record.id, num_stops = station_stops)
-
-
-            #TODO: origin / destination filtering for alternative tiplocs
-            new_route = [orig_tiploc]
-
-            for stop in journey:
-                if 'IP' in stop.tag:
-                    tiploc = stop.attrib['tpl']
-
-                    if alt := Station.objects.filter(alternative_tiploc = tiploc).values('tiploc'):
-                        alt = alt.get()
-
-                        tiploc = alt['tiploc']
-
-                    new_route.append(tiploc)
-
-            new_route.append(dest_tiploc)
-            #TODO maybe figure out a checksum system to make this quicker?
-            for route in routes:
-
-                stop_ids = Stop.objects.filter(route_id = route.id).values_list('station_id', flat=True)
-
-                check_route = {}
-
-                check_route[0] = []
-                check_route[1] = []
-
-                for stop_id in stop_ids:
-                    station = Station.objects.filter(id = stop_id).values('tiploc', 'alternative_tiploc').get()
-
-                    #if a station has multiple tiplocs (eg Wimbledon) then create multiple checksums to check against
-                    #there is an edge case here if a route has multiple stops with an alternative tiploc
-                    #however I haven't seen it occur in any routes yet
-                    # if station['alternative_tiploc'] is not None:
-                    #     print(new_route)
-                    #     check_route[1] = check_route
-                    #     check_route[1].append(station['alternative_tiploc'])
-
-                    check_route[0].append(station['tiploc'])
-
-                new_route_combined = '|'.join(new_route)
-                check_route_1_combined = '|'.join(check_route[0])
-                # if check_route[1] is not None:
-                #     check_route_2_combined = '|'.join(check_route[1])
-
-                if new_route_combined == check_route_1_combined:
-                    route_match = True
-                    break
-
-            if route_match == False:
-                print('Routes differ!')
-
-                save_new_route(journey, orig_tiploc, dest_tiploc, toc_record)
+            #try to find checksum in db
+            if not Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum):
+                
+                save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
         else:
+            #get new route checksum
+            new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
+
             #new route, add route and stops to db
-            save_new_route(journey, orig_tiploc, dest_tiploc, toc_record)
+            save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
     return render(request, 'hello2.html')
 
-def save_new_route(journey, orig_tiploc, dest_tiploc, toc_record):
+def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
     
-            route = Route(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_record.id)
+            route = Route(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, checksum = route_checksum)
             route.save()
 
             orig_record = Station.objects.filter(Q(tiploc = orig_tiploc)| Q(alternative_tiploc = orig_tiploc)).get()
@@ -282,3 +241,39 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_record):
 
             route.num_stops = stop_no
             route.save()
+
+def check_alternative_tiplocs(alt_tiploc):
+
+    if alt := Station.objects.filter(alternative_tiploc = alt_tiploc).values('tiploc'):
+
+        alt = alt.get()
+        tiploc = alt['tiploc']
+
+        return tiploc
+
+    else:
+        return alt_tiploc
+
+def generate_route_checksum(journey, orig_tiploc, dest_tiploc):
+
+    #check if both origin and destination tiplocs have alternatives
+    orig_tiploc = check_alternative_tiplocs(orig_tiploc)
+
+    dest_tiploc = check_alternative_tiplocs(dest_tiploc)    
+
+    route = [orig_tiploc]
+
+    for stop in journey:
+        if 'IP' in stop.tag:
+            tiploc = stop.attrib['tpl']
+
+            tiploc = check_alternative_tiplocs(tiploc)
+
+            route.append(tiploc)
+
+    route.append(dest_tiploc)
+
+    route_string = '|'.join(route)
+    route_checksum = hashlib.md5(route_string.encode('utf-8')).digest()
+
+    return route_checksum

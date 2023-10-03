@@ -28,6 +28,7 @@ class Route(models.Model):
     dest = models.CharField(default=0)
     num_stops = models.SmallIntegerField(default=0)
     toc = models.ForeignKey(TOC, on_delete=models.SET_NULL, null='true', related_name='route_TOC_toc')
+    checksum = models.CharField(null='true')
 
 class Stop(models.Model):
     route = models.ForeignKey(Route, on_delete=models.SET_NULL, null='true', related_name='Route_id')
