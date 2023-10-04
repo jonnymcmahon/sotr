@@ -27,6 +27,13 @@ from pprint import pprint
 import datetime
 import psycopg2
 import os
+from dotenv import load_dotenv
+
+dotenv_path = os.path.join('/django/sotr/.env')
+
+print(dotenv_path)
+
+load_dotenv(dotenv_path)
 
 connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="db", port="5432")
 cursor = connection.cursor()
@@ -123,10 +130,12 @@ class StompClient(stomp.ConnectionListener):
                             
                             delayed_secs = int(delayed.total_seconds())
 
-                            sql = f'UPDATE timetable_journey SET "arrivalTime" = \'{actual.strftime("%H:%M:%S")}\', "delayedTime" = \'{delayed_secs}\' WHERE ("rid" = \'{rid}\') AND ("uid" = \'{uid}\')'
-                            print(sql)
-                            cursor.execute(sql)
-                            connection.commit()
+                            print(msg)
+
+                            # sql = f'UPDATE timetable_journey SET "arrivalTime" = \'{actual.strftime("%H:%M:%S")}\', "delayedTime" = \'{delayed_secs}\' WHERE ("rid" = \'{rid}\') AND ("uid" = \'{uid}\')'
+                            # print(sql)
+                            # cursor.execute(sql)
+                            # connection.commit()
 
                             logging.info('Delayed, scheduled: %s, actual %s. Service delayed by %s', sched.time(), actual.time(), (actual-sched))
 
