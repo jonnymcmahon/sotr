@@ -34,3 +34,14 @@ class Stop(models.Model):
     route = models.ForeignKey(Route, on_delete=models.SET_NULL, null='true', related_name='Route_id')
     station = models.ForeignKey(Station, on_delete=models.SET_NULL, null='true', related_name='Station_name')
     stop_number = models.SmallIntegerField()
+
+# class Delay(models.Model):
+#     route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='delay_route_id')
+#     toc = models.ForeignKey(TOC, on_delete=models.SET_NULL, null='true', related_name='delay_toc_id')
+
+class Train(models.Model):
+    timestamp = models.DateTimeField(null='true')
+    toc = models.ForeignKey(TOC, on_delete=models.SET_NULL, null='true', related_name='train_toc_id')
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='train_route_id')
+    rid = models.CharField(default=0)
+    cancelled = models.BooleanField(null='true')

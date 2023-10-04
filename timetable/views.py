@@ -8,7 +8,7 @@ import gzip
 import os
 import xml.etree.ElementTree as ET
 import json
-from .models import Station, Journey, TOC, Route, Stop
+from .models import Station, Journey, TOC, Route, Stop, Train
 import time
 import hashlib
 import sys
@@ -25,48 +25,48 @@ def parse_schedule(request):
     tree = ET.parse(xml_unzipped)
     root = tree.getroot()
 
+    today = datetime.date.today()
+
     for journey in root:
         
         #check if journey or association
         if 'Association' in journey.tag: continue
 
         #check if train is for today's timetable
-        if not journey.attrib['ssd'] == datetime.date.today().strftime('%Y-%m-%d'): continue
+        if not journey.attrib['ssd'] == today.strftime('%Y-%m-%d'): continue
 
         #check if passenger service
         if 'isPassengerSvc' in journey.attrib:
             if journey.attrib['isPassengerSvc'] == "false": continue
 
         num_stops = len(journey)-1
+
+        route_info = find_route(journey)
+        route_id = route_info[0]
+        toc_id = route_info[1]
         
-        #if train cancelled, change lookup for final stop TODO: understand cancelled services
-        if 'cancelReason' in journey[num_stops].tag:
-            num_stops -= 1
-
-        # print(journey[0].attrib['tpl'], journey[num_stops].attrib['tpl'], journey.attrib['toc'])
-
-        toc_record = TOC.objects.filter(toc = journey.attrib['toc'])[0]
-
-        orig_tiploc = journey[0].attrib['tpl']
-        dest_tiploc = journey[num_stops].attrib['tpl']
-
-        orig = Station.objects.filter(Q(tiploc = orig_tiploc)| Q(alternative_tiploc = orig_tiploc)).get()
-        dest = Station.objects.filter(Q(tiploc = dest_tiploc)| Q(alternative_tiploc = dest_tiploc)).get()
+        #TODO: understand cancelled services
+        if 'cancelReason' in journey[num_stops].tag: train_cancelled = True
+        else: train_cancelled = False
 
         #unsure if bug in data? sometimes journey has no ptd / pta, so use wta / wtd instead
         depart = journey[0].attrib['ptd'] if ('ptd' in journey.attrib) else journey[0].attrib['wtd']
-        arrive = journey[num_stops].attrib['pta'] if ('pta' in journey.attrib) else journey[num_stops].attrib['wta']
 
-        obj, created = Journey.objects.update_or_create(
-            date = journey.attrib['ssd'],
-            origin_id = orig.id,
-            destination_id = dest.id,
-            departureTime = depart,
-            arrivalTime = arrive,
-            uid = journey.attrib['uid'],
+        #if time has no seconds, add 00
+        if len(depart) < 6:
+            depart += ':00'
+
+        depart = datetime.datetime.strptime(depart, "%H:%M:%S").time()
+
+        train_timestamp = datetime.datetime.combine(today, depart)
+
+        obj = Train.objects.update_or_create(
+            timestamp = train_timestamp,
             rid = journey.attrib['rid'],
-            toc_id = toc_record.id
-            )
+            cancelled = train_cancelled,
+            route_id = route_id,
+            toc_id = toc_id
+        )
 
     return render(request, 'hello2.html')
 
@@ -80,7 +80,7 @@ def download_file():
     )
 
     date = datetime.date.today()
-    prefix_key = f'PPTimetable/{date.year}{date.month:02d}{date.day}'
+    prefix_key = f'PPTimetable/{date.year}{date.month:02d}{date.day:02d}'
 
     timetables = s3.list_objects_v2(
         Bucket = 'darwin.xmltimetable',
@@ -151,96 +151,95 @@ def read_tocs(request):
 
     return render(request, 'hello2.html')
 
-def find_routes(request):
-    # output_filepath = download_file()
-    output_filepath = '/django/timetable/storage/20230925020504_v8.xml.gz'
 
-    xml_unzipped = gzip.open(output_filepath, 'r')
 
-    tree = ET.parse(xml_unzipped)
-    root = tree.getroot()
 
-    for journey in root:
+
+
+def find_route(journey):
+
+    #new variable station_stops as journey includes tiplocs that arent stations (junctions etc)
+    station_stops = 2
+    for stop in journey:
+        if 'IP' in stop.tag:
+            station_stops += 1
+
+    length = len(journey)-1
+    
+    #if train cancelled, change lookup for final stop TODO: understand cancelled services
+    if 'cancelReason' in journey[length].tag:
+        length -= 1
+
+    toc_id = TOC.objects.filter(toc = journey.attrib['toc'])[0].id
+
+    orig_tiploc = journey[0].attrib['tpl']
+    dest_tiploc = journey[length].attrib['tpl']
+
+    route_id = None
+    
+    #if matches another route do a check to see if they are the same
+    if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops):
         
-        #check if journey or association
-        if 'Association' in journey.tag: continue
-        
-        #check if passenger service
-        if 'isPassengerSvc' in journey.attrib:
-            if journey.attrib['isPassengerSvc'] == "false": continue
+        #get new checksum
+        new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
 
-        #check if train is for today's timetable
-        # if not journey.attrib['ssd'] == datetime.date.today().strftime('%Y-%m-%d'): continue
-        if not journey.attrib['ssd'] == '2023-09-25': continue
-
-        # if not journey.attrib['rid'] == '202309257623262': continue
-
-        #new variable station_stops as journey includes tiplocs that arent stations (junctions etc)
-        station_stops = 2
-        for stop in journey:
-            if 'IP' in stop.tag:
-                station_stops += 1
-
-        length = len(journey)-1
-        
-        #if train cancelled, change lookup for final stop TODO: understand cancelled services
-        if 'cancelReason' in journey[length].tag:
-            length -= 1
-
-        toc_id = TOC.objects.filter(toc = journey.attrib['toc'])[0].id
-
-        orig_tiploc = journey[0].attrib['tpl']
-        dest_tiploc = journey[length].attrib['tpl']
-        
-        #if matches another route do a check to see if they are the same
-        if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops):
+        #try to find checksum in db
+        if not Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum):
             
-            #get new checksum
-            new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
+            route_id = save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
-            #try to find checksum in db
-            if not Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum):
-                
-                save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
+    else:
+        #get new route checksum
+        new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
 
-        else:
-            #get new route checksum
-            new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
+        #new route, add route and stops to db
+        route_id = save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
-            #new route, add route and stops to db
-            save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
+    if route_id is None:
+        route_id = Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum).get().id
 
-    return render(request, 'hello2.html')
+    return route_id, toc_id
+
+
+
+
 
 def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
     
-            route = Route(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, checksum = route_checksum)
-            route.save()
+    route = Route(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, checksum = route_checksum)
+    route.save()
 
-            orig_record = Station.objects.filter(Q(tiploc = orig_tiploc)| Q(alternative_tiploc = orig_tiploc)).get()
-            dest_record = Station.objects.filter(Q(tiploc = dest_tiploc)| Q(alternative_tiploc = dest_tiploc)).get()
+    orig_record = Station.objects.filter(Q(tiploc = orig_tiploc)| Q(alternative_tiploc = orig_tiploc)).get()
+    dest_record = Station.objects.filter(Q(tiploc = dest_tiploc)| Q(alternative_tiploc = dest_tiploc)).get()
 
-            orig = Stop(stop_number = 1, route_id = route.id, station_id = orig_record.id)
-            orig.save()
+    orig = Stop(stop_number = 1, route_id = route.id, station_id = orig_record.id)
+    orig.save()
 
-            stop_no = 2
+    stop_no = 2
 
-            for stop in journey:
-                # print(stop.attrib)
-                if 'IP' in stop.tag:
-                    stop_tiploc = stop.attrib['tpl']
+    for stop in journey:
 
-                    stop_record = Station.objects.filter(Q(tiploc = stop_tiploc)| Q(alternative_tiploc = stop_tiploc)).get()
+        if 'IP' in stop.tag:
+            stop_tiploc = stop.attrib['tpl']
 
-                    Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = stop_record.id)
+            stop_record = Station.objects.filter(Q(tiploc = stop_tiploc)| Q(alternative_tiploc = stop_tiploc)).get()
 
-                    stop_no += 1
+            Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = stop_record.id)
 
-            dest = Stop(stop_number = stop_no, route_id = route.id, station_id = dest_record.id)
-            dest.save()
+            stop_no += 1
 
-            route.num_stops = stop_no
-            route.save()
+    dest = Stop(stop_number = stop_no, route_id = route.id, station_id = dest_record.id)
+    dest.save()
+
+    route.num_stops = stop_no
+    route.save()
+
+    return route.id
+
+
+
+
+
 
 def check_alternative_tiplocs(alt_tiploc):
 
@@ -253,6 +252,10 @@ def check_alternative_tiplocs(alt_tiploc):
 
     else:
         return alt_tiploc
+
+
+
+
 
 def generate_route_checksum(journey, orig_tiploc, dest_tiploc):
 
