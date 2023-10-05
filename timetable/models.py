@@ -29,11 +29,13 @@ class Route(models.Model):
     num_stops = models.SmallIntegerField(default=0)
     toc = models.ForeignKey(TOC, on_delete=models.SET_NULL, null='true', related_name='route_TOC_toc')
     checksum = models.CharField(null='true')
+    duration_checksum = models.IntegerField(null='true')
 
 class Stop(models.Model):
     route = models.ForeignKey(Route, on_delete=models.SET_NULL, null='true', related_name='Route_id')
     station = models.ForeignKey(Station, on_delete=models.SET_NULL, null='true', related_name='Station_name')
     stop_number = models.SmallIntegerField()
+    time_from_last = models.DurationField(null='true')
 
 # class Delay(models.Model):
 #     route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='delay_route_id')

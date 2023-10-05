@@ -205,6 +205,8 @@ def find_route(journey):
 
 
 def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
+
+    date = datetime.datetime.strptime(journey.attrib['ssd'], '%Y-%m-%d')
     
     route = Route(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, checksum = route_checksum)
     route.save()
@@ -215,30 +217,70 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
     orig = Stop(stop_number = 1, route_id = route.id, station_id = orig_record.id)
     orig.save()
 
+    duration_checksum = 0
+
     stop_no = 2
+
+    previous_stop_time = journey[0].attrib['ptd'] if ('ptd' in journey.attrib) else journey[0].attrib['wtd']
+
+    previous_stop_time = str_to_time(previous_stop_time)
+
+    previous_stop_time = datetime.datetime.combine(date, previous_stop_time)
 
     for stop in journey:
 
-        if 'IP' in stop.tag:
+        if 'IP' in stop.tag or 'DT' in stop.tag:
+            #grab stop tiploc, time
             stop_tiploc = stop.attrib['tpl']
 
-            stop_record = Station.objects.filter(Q(tiploc = stop_tiploc)| Q(alternative_tiploc = stop_tiploc)).get()
+            #parse time to datetime obj
+            stop_time = stop.attrib['pta'] if ('pta' in stop.attrib) else stop.attrib['wta']
 
-            Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = stop_record.id)
+            stop_time = str_to_time(stop_time)
+
+            stop_time = datetime.datetime.combine(date, stop_time)
+
+            #check if train time has passed midnight (if diff in hour > 5hrs)
+            if abs(stop_time.hour - previous_stop_time.hour) > 5:
+                stop_time += datetime.timedelta(days=1)
+                date += datetime.timedleta(days=1)
+
+                print(stop_time, previous_stop_time, 'NEXT DAY!!!')
+            
+            #find time since last stop
+            next_stop_time = stop_time - previous_stop_time
+            
+            #move previous_stop_time one stop along
+            previous_stop_time = stop_time
+
+            stop_tiploc = check_alternative_tiplocs(stop_tiploc)
+
+            station_record = Station.objects.filter(tiploc = stop_tiploc).get()
+
+            #create db record
+            Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = station_record.id, time_from_last = next_stop_time)
+
+            duration_checksum += ((next_stop_time.total_seconds()/60) * stop_no)
 
             stop_no += 1
 
-    dest = Stop(stop_number = stop_no, route_id = route.id, station_id = dest_record.id)
-    dest.save()
-
-    route.num_stops = stop_no
+    route.num_stops = stop_no 
+    route.duration_checksum = duration_checksum
     route.save()
 
     return route.id
 
 
 
+def str_to_time(stop_time):
 
+    #handles cases where seconds field is optional
+    if len(stop_time) < 6:
+        stop_time = datetime.datetime.strptime(stop_time, '%H:%M').time()
+    else:
+        stop_time = datetime.datetime.strptime(stop_time, '%H:%M:%S').time()
+
+    return stop_time
 
 
 def check_alternative_tiplocs(alt_tiploc):
