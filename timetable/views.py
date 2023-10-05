@@ -243,7 +243,7 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
             #check if train time has passed midnight (if diff in hour > 5hrs)
             if abs(stop_time.hour - previous_stop_time.hour) > 5:
                 stop_time += datetime.timedelta(days=1)
-                date += datetime.timedeleta(days=1)
+                date += datetime.timedelta(days=1)
 
                 print(stop_time, previous_stop_time, 'NEXT DAY!!!')
             
