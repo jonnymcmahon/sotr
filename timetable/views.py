@@ -176,27 +176,37 @@ def find_route(journey):
     dest_tiploc = journey[length].attrib['tpl']
 
     route_id = None
+
+    # print(orig_tiploc, dest_tiploc, toc_id, station_stops)
+    print(Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops).raw)
     
     #if matches another route do a check to see if they are the same
     if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops):
         
         #get new checksum
-        new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
+        new_route_checksum = generate_route_checksum(journey, orig_tiploc)
+
+        print('here1')
+        print(orig_tiploc, dest_tiploc, toc_id, station_stops, new_route_checksum)
 
         #try to find checksum in db
         if not Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum):
+
+            print('here2')
             
             route_id = save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
     else:
         #get new route checksum
-        new_route_checksum = generate_route_checksum(journey, orig_tiploc, dest_tiploc)
+        new_route_checksum = generate_route_checksum(journey, orig_tiploc)
 
         #new route, add route and stops to db
         route_id = save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
     if route_id is None:
         route_id = Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum).get().id
+
+    time.sleep(2)
 
     return route_id, toc_id
 
@@ -212,12 +222,9 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
     route.save()
 
     orig_record = Station.objects.filter(Q(tiploc = orig_tiploc)| Q(alternative_tiploc = orig_tiploc)).get()
-    dest_record = Station.objects.filter(Q(tiploc = dest_tiploc)| Q(alternative_tiploc = dest_tiploc)).get()
 
     orig = Stop(stop_number = 1, route_id = route.id, station_id = orig_record.id)
     orig.save()
-
-    duration_checksum = 0
 
     stop_no = 2
 
@@ -260,12 +267,10 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
             #create db record
             Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = station_record.id, time_from_last = next_stop_time)
 
-            duration_checksum += ((next_stop_time.total_seconds()/60) * stop_no)
+            if 'IP' in stop.tag:
+                stop_no += 1
 
-            stop_no += 1
-
-    route.num_stops = stop_no 
-    route.duration_checksum = duration_checksum
+    route.num_stops = stop_no
     route.save()
 
     return route.id
@@ -299,24 +304,20 @@ def check_alternative_tiplocs(alt_tiploc):
 
 
 
-def generate_route_checksum(journey, orig_tiploc, dest_tiploc):
+def generate_route_checksum(journey, orig_tiploc):
 
     #check if both origin and destination tiplocs have alternatives
     orig_tiploc = check_alternative_tiplocs(orig_tiploc)
 
-    dest_tiploc = check_alternative_tiplocs(dest_tiploc)    
-
     route = [orig_tiploc]
 
     for stop in journey:
-        if 'IP' in stop.tag:
+        if 'IP' in stop.tag or 'DT' in stop.tag:
             tiploc = stop.attrib['tpl']
 
             tiploc = check_alternative_tiplocs(tiploc)
 
             route.append(tiploc)
-
-    route.append(dest_tiploc)
 
     route_string = '|'.join(route)
     route_checksum = hashlib.md5(route_string.encode('utf-8')).digest()
