@@ -176,9 +176,6 @@ def find_route(journey):
     dest_tiploc = journey[length].attrib['tpl']
 
     route_id = None
-
-    # print(orig_tiploc, dest_tiploc, toc_id, station_stops)
-    print(Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops).raw)
     
     #if matches another route do a check to see if they are the same
     if Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops):
@@ -186,13 +183,8 @@ def find_route(journey):
         #get new checksum
         new_route_checksum = generate_route_checksum(journey, orig_tiploc)
 
-        print('here1')
-        print(orig_tiploc, dest_tiploc, toc_id, station_stops, new_route_checksum)
-
         #try to find checksum in db
         if not Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum):
-
-            print('here2')
             
             route_id = save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, new_route_checksum)
 
@@ -205,8 +197,6 @@ def find_route(journey):
 
     if route_id is None:
         route_id = Route.objects.filter(orig = orig_tiploc, dest = dest_tiploc, toc_id = toc_id, num_stops = station_stops, checksum = new_route_checksum).get().id
-
-    time.sleep(2)
 
     return route_id, toc_id
 
