@@ -32,31 +32,27 @@ def parse_schedule(request):
         #check if journey or association
         if 'Association' in journey.tag: continue
 
-        #check if train is for today's timetable
-        if not journey.attrib['ssd'] == today.strftime('%Y-%m-%d'): continue
-
         #check if passenger service
         if 'isPassengerSvc' in journey.attrib:
             if journey.attrib['isPassengerSvc'] == "false": continue
 
-        num_stops = len(journey)-1
+        #check if train is for today's timetable
+        if not journey.attrib['ssd'] == today.strftime('%Y-%m-%d'): continue
+
+        array_len = len(journey)-1
 
         route_info = find_route(journey)
         route_id = route_info[0]
         toc_id = route_info[1]
         
         #TODO: understand cancelled services
-        if 'cancelReason' in journey[num_stops].tag: train_cancelled = True
+        if 'cancelReason' in journey[array_len].tag: train_cancelled = True
         else: train_cancelled = False
 
         #unsure if bug in data? sometimes journey has no ptd / pta, so use wta / wtd instead
         depart = journey[0].attrib['ptd'] if ('ptd' in journey.attrib) else journey[0].attrib['wtd']
 
-        #if time has no seconds, add 00
-        if len(depart) < 6:
-            depart += ':00'
-
-        depart = datetime.datetime.strptime(depart, "%H:%M:%S").time()
+        depart = str_to_time(depart)
 
         train_timestamp = datetime.datetime.combine(today, depart)
 
@@ -241,8 +237,6 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
             if abs(stop_time.hour - previous_stop_time.hour) > 5:
                 stop_time += datetime.timedelta(days=1)
                 date += datetime.timedelta(days=1)
-
-                print(stop_time, previous_stop_time, 'NEXT DAY!!!')
             
             #find time since last stop
             next_stop_time = stop_time - previous_stop_time
@@ -257,6 +251,7 @@ def save_new_route(journey, orig_tiploc, dest_tiploc, toc_id, route_checksum):
             #create db record
             Stop.objects.create(stop_number = stop_no, route_id = route.id, station_id = station_record.id, time_from_last = next_stop_time)
 
+            #only need to increment stop number if before final stop
             if 'IP' in stop.tag:
                 stop_no += 1
 
@@ -313,3 +308,8 @@ def generate_route_checksum(journey, orig_tiploc):
     route_checksum = hashlib.md5(route_string.encode('utf-8')).digest()
 
     return route_checksum
+
+def test_func(request):
+    print(sys.path)
+
+    return render(request, 'hello2.html')

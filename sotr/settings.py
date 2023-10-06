@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'timetable',
     'debug_toolbar',
     'storages',
+    'stomp',
 ]
 
 MIDDLEWARE = [
