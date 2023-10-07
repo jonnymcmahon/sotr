@@ -31,14 +31,10 @@ class Route(models.Model):
     checksum = models.CharField(null='true')
 
 class Stop(models.Model):
-    route = models.ForeignKey(Route, on_delete=models.SET_NULL, null='true', related_name='Route_id')
-    station = models.ForeignKey(Station, on_delete=models.SET_NULL, null='true', related_name='Station_name')
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='Route_id')
+    station = models.ForeignKey(Station, on_delete=models.CASCADE, null='true', related_name='Station_name')
     stop_number = models.SmallIntegerField()
     time_from_last = models.DurationField(null='true')
-
-# class Delay(models.Model):
-#     route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='delay_route_id')
-#     toc = models.ForeignKey(TOC, on_delete=models.SET_NULL, null='true', related_name='delay_toc_id')
 
 class Train(models.Model):
     timestamp = models.DateTimeField(null='true')
@@ -46,3 +42,10 @@ class Train(models.Model):
     route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='train_route_id')
     rid = models.CharField(default=0)
     cancelled = models.BooleanField(null='true')
+
+class Delay(models.Model):
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, null='true', related_name='delay_route_id')
+    toc = models.ForeignKey(TOC, on_delete=models.CASCADE, null='true', related_name='delay_toc_id')
+    train = models.ForeignKey(Train, on_delete=models.CASCADE, null='true', related_name='delay_train_id')
+    stop = models.ForeignKey(Stop, on_delete=models.CASCADE, null='true', related_name='delay_stop_id')
+    delay = models.DurationField(null='true')

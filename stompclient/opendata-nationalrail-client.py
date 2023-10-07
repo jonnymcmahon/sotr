@@ -23,9 +23,6 @@ import time
 import socket
 import logging
 import xmlschema
-from pprint import pprint
-import datetime
-import psycopg2
 import os
 from dotenv import load_dotenv
 import sys
@@ -40,9 +37,6 @@ import views
 dotenv_path = os.path.join('/django/sotr/.env')
 
 load_dotenv(dotenv_path)
-
-connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="db", port="5432")
-cursor = connection.cursor()
 
 logging.basicConfig(format='%(asctime)s %(levelname)s\t%(message)s', level=logging.INFO)
 
@@ -110,12 +104,11 @@ class StompClient(stomp.ConnectionListener):
                 bio.seek(0)
                 msg = zlib.decompress(frame.body, zlib.MAX_WBITS | 32)
                 xml = schema.to_dict(msg)
-                print(sys.path)
                 
-                views.handle(msg, xml)
+                views.handle(xml)
 
         except Exception as e:
-            print(e)
+            views.handle_error(msg, e)
 
 
 conn = stomp.Connection12([(HOSTNAME, HOSTPORT)],
